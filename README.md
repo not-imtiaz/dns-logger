@@ -2,7 +2,7 @@
 
 A lightweight, modular network utility designed to capture DNS queries on your home network and persist them to a local SQLite database.
 
-![Project Screenshot](Test Sample.png)
+[Project Screenshot](Test Sample.png)
 
 # Overview
 The Invisible Packet Logger acts as a passive network monitor. By intercepting UDP traffic on port 53, it extracts domain names from DNS queries in real-time, providing visibility into the web traffic originating from your network.
