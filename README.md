@@ -19,14 +19,14 @@ The Invisible Packet Logger acts as a passive network monitor. By intercepting U
 * Administrative/Root privileges (required for raw network sniffing)
 
 ## Installation
-1. Clone the repository:
+Clone the repository:
   Run this commands on terminal
 
 git clone [https://github.com/yourusername/dns-logger.git](https://github.com/yourusername/dns-logger.git)
 
 cd dns-logger
 
-2. Install Dependencies:
+Install Dependencies:
 
 pip install -r requirements.txt
 
