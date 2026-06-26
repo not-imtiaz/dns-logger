@@ -21,20 +21,18 @@ The Invisible Packet Logger acts as a passive network monitor. By intercepting U
 ## Installation
 1. Clone the repository:
   Run this commands on terminal
------------------------------------------------------------------------------------------------------------
 git clone [https://github.com/yourusername/dns-logger.git](https://github.com/yourusername/dns-logger.git)
+
 cd dns-logger
------------------------------------------------------------------------------------------------------------
+
 2. Install Dependencies:
------------------------------------------------------------------------------------------------------------
 pip install -r requirements.txt
------------------------------------------------------------------------------------------------------------
+
 
 ## Usage
 Run the script with root/administrator privileges to allow packet capture:
------------------------------------------------------------------------------------------------------------
 sudo -E python3 main.py
------------------------------------------------------------------------------------------------------------
+
 
 ## Disclaimer
 This tool is intended for educational and authorized network monitoring purposes only. Ensure you have explicit permission before monitoring any network traffic.
