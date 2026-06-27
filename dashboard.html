@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DNS Logger</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<style>
+/* ── Design tokens ─────────────────────────────────────────────────────────
+   Change these to retheme the entire dashboard.                           */
+:root {
+  --bg:        #0C0E18;
+  --surface:   #13162A;
+  --border:    #1E2240;
+  --accent:    #4F8EF7;       /* electric blue — the one bold choice       */
+  --accent-lo: rgba(79,142,247,.12);
+  --accent-md: rgba(79,142,247,.35);
+  --green:     #36D399;
+  --yellow:    #FBBD23;
+  --red:       #F87272;
+  --text:      #E2E8F8;
+  --text-dim:  #5A6080;
+  --text-mid:  #8B92B8;
+  --mono:      "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  --sans:      "Inter", system-ui, sans-serif;
+  --radius:    10px;
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: 52px 1fr;
+  grid-template-areas:
+    "header header"
+    "sidebar main";
+  min-height: 100vh;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+header {
+  grid-area: header;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -.01em;
+}
+.logo-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity: 1; box-shadow: 0 0 8px var(--accent); }
+  50%      { opacity: .5; box-shadow: 0 0 18px var(--accent); }
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+#status-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+#status-badge.ok  { color: var(--green); }
+#status-badge.err { color: var(--red); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-mid);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  letter-spacing: .03em;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-lo); }
+.btn.primary {
+  border-color: var(--accent-md);
+  color: var(--accent);
+  background: var(--accent-lo);
+}
+.btn.primary:hover { background: var(--accent-md); }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+aside {
+  grid-area: sidebar;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.filter-group label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.filter-group input[type="date"],
+.filter-group input[type="text"],
+.filter-group select {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--sans);
+  outline: none;
+  transition: border-color .15s;
+}
+.filter-group input:focus,
+.filter-group select:focus { border-color: var(--accent); }
+
+/* color-scheme so date pickers look dark in Chrome */
+input[type="date"] { color-scheme: dark; }
+
+.sidebar-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+.sidebar-footer code {
+  font-family: var(--mono);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+/* ── Main content ─────────────────────────────────────────────────────────── */
+main {
+  grid-area: main;
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Metric cards ─────────────────────────────────────────────────────────── */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.metric-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.metric-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 3px 0 0 3px;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.metric-card:hover::before { opacity: 1; }
+.metric-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.metric-value {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--text);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.metric-value.highlight { color: var(--accent); }
+.metric-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 6px;
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Chart row ─────────────────────────────────────────────────────────────── */
+.chart-row {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 14px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-mid);
+}
+.chart-wrap { position: relative; }
+.chart-wrap canvas { max-height: 240px; }
+
+/* ── Table ─────────────────────────────────────────────────────────────────── */
+.table-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.table-scroll { overflow-x: auto; max-height: 380px; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  padding: 10px 16px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-align: left;
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  border-bottom: 1px solid var(--border);
+}
+tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: var(--accent-lo); }
+tbody td { padding: 9px 16px; font-size: 12.5px; color: var(--text); }
+td.mono { font-family: var(--mono); font-size: 11.5px; color: var(--text-mid); }
+td.domain { color: var(--text); font-family: var(--mono); font-size: 12px; }
+td.id-cell { color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
+
+/* ── Empty / error state ─────────────────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 60px 24px;
+  color: var(--text-dim);
+  text-align: center;
+}
+.empty-state .icon { font-size: 32px; opacity: .4; }
+.empty-state p { font-size: 13px; max-width: 300px; line-height: 1.6; }
+
+/* ── Toast ─────────────────────────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 12px;
+  color: var(--text-mid);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: all .25s;
+  pointer-events: none;
+  z-index: 100;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+#toast.ok  { border-color: var(--green); color: var(--green); }
+#toast.err { border-color: var(--red);   color: var(--red); }
+</style>
+</head>
+
+<body>
+<div class="shell">
+
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <header>
+    <div class="logo">
+      <div class="logo-dot"></div>
+      DNS Logger
+    </div>
+    <div class="header-right">
+      <span id="status-badge">connecting…</span>
+      <button class="btn primary" onclick="refresh()">⟳ Refresh</button>
+    </div>
+  </header>
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
+  <aside>
+    <div class="filter-group">
+      <label>From</label>
+      <input type="date" id="f-from" />
+    </div>
+    <div class="filter-group">
+      <label>To</label>
+      <input type="date" id="f-to" />
+    </div>
+    <div class="filter-group">
+      <label>Domain contains</label>
+      <input type="text" id="f-domain" placeholder="e.g. google.com" />
+    </div>
+    <div class="filter-group">
+      <label>Show rows</label>
+      <select id="f-limit">
+        <option value="100">100</option>
+        <option value="500" selected>500</option>
+        <option value="2000">2 000</option>
+        <option value="0">All</option>
+      </select>
+    </div>
+    <button class="btn primary" style="width:100%;justify-content:center" onclick="applyFilters()">Apply filters</button>
+
+    <hr class="sidebar-divider" />
+
+    <div class="sidebar-footer">
+      <div>Serving from</div>
+      <code>dns_logs.db</code>
+      <div style="margin-top:8px">Auto-refreshes every 30 s while the server is running.</div>
+    </div>
+  </aside>
+
+  <!-- ── Main ────────────────────────────────────────────────────────── -->
+  <main>
+
+    <!-- Metrics -->
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="metric-label">Total queries</div>
+        <div class="metric-value highlight" id="m-total">—</div>
+        <div class="metric-sub" id="m-total-sub">loading…</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Unique domains</div>
+        <div class="metric-value" id="m-unique">—</div>
+        <div class="metric-sub" id="m-unique-sub">&nbsp;</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Last hour</div>
+        <div class="metric-value" id="m-hour">—</div>
+        <div class="metric-sub" id="m-hour-sub">&nbsp;</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Top domain</div>
+        <div class="metric-value" style="font-size:15px;line-height:1.4;padding-top:4px" id="m-top">—</div>
+        <div class="metric-sub" id="m-top-sub">&nbsp;</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="chart-row">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Query volume · hourly</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart-timeline"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Top 10 domains</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart-top" style="max-height:260px"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-card">
+      <div class="table-header">
+        <span class="card-title">Query log</span>
+        <span id="table-count" style="font-size:11px;color:var(--text-dim)"></span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:60px">#</th>
+              <th style="width:180px">Timestamp</th>
+              <th>Domain</th>
+            </tr>
+          </thead>
+          <tbody id="table-body">
+            <tr><td colspan="3"><div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+const DATA_URL      = "/data";          // change to a .json path for static mode
+const REFRESH_MS    = 30_000;           // auto-refresh interval
+const CHART_COLORS  = [
+  "#4F8EF7","#36D399","#FBBD23","#F87272",
+  "#A78BFA","#34D1BF","#FB923C","#E879F9",
+  "#60A5FA","#4ADE80"
+];
+
+// ── State ───────────────────────────────────────────────────────────────────
+let allRows  = [];          // raw rows from server
+let filtered = [];          // after filter applied
+let charts   = {};          // Chart.js instances
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  initDateDefaults();
+  initCharts();
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+  document.getElementById("f-domain").addEventListener("keydown", e => {
+    if (e.key === "Enter") applyFilters();
+  });
+});
+
+function initDateDefaults() {
+  const today = new Date();
+  const week  = new Date(today);
+  week.setDate(today.getDate() - 7);
+  document.getElementById("f-to").value   = fmtDate(today);
+  document.getElementById("f-from").value = fmtDate(week);
+}
+
+// ── Data fetching ───────────────────────────────────────────────────────────
+async function refresh() {
+  const limit  = document.getElementById("f-limit").value || 2000;
+  const url    = `${DATA_URL}?limit=${limit}`;
+  const badge  = document.getElementById("status-badge");
+
+  try {
+    const res  = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    allRows    = json.rows ?? json;          // supports both server and static JSON
+    badge.textContent = `● live · ${new Date().toLocaleTimeString()}`;
+    badge.className   = "ok";
+    applyFilters();
+    toast("Data refreshed", "ok");
+  } catch (err) {
+    badge.textContent = `✕ ${err.message}`;
+    badge.className   = "err";
+    toast("Could not reach server — is server.py running?", "err");
+  }
+}
+
+// ── Filtering ───────────────────────────────────────────────────────────────
+function applyFilters() {
+  const from   = document.getElementById("f-from").value;
+  const to     = document.getElementById("f-to").value;
+  const domain = document.getElementById("f-domain").value.trim().toLowerCase();
+
+  filtered = allRows.filter(row => {
+    const ts = row.timestamp;
+    if (from && ts < from) return false;
+    if (to   && ts > to + " 23:59:59") return false;
+    if (domain && !row.domain.toLowerCase().includes(domain)) return false;
+    return true;
+  });
+
+  updateMetrics();
+  updateCharts();
+  updateTable();
+}
+
+// ── Metrics ─────────────────────────────────────────────────────────────────
+function updateMetrics() {
+  const total   = filtered.length;
+  const domains = [...new Set(filtered.map(r => r.domain))];
+  const unique  = domains.length;
+  const nowMs   = Date.now();
+  const hourAgo = nowMs - 3_600_000;
+  const lastHr  = filtered.filter(r => new Date(r.timestamp).getTime() >= hourAgo).length;
+  const counts  = freq(filtered.map(r => r.domain));
+  const top     = counts[0] ?? null;
+
+  set("m-total",     total.toLocaleString());
+  set("m-total-sub", `${allRows.length.toLocaleString()} total in DB`);
+  set("m-unique",    unique.toLocaleString());
+  set("m-unique-sub",`of ${[...new Set(allRows.map(r=>r.domain))].length} overall`);
+  set("m-hour",      lastHr.toLocaleString());
+  set("m-hour-sub",  "queries in last 60 min");
+  set("m-top",       top ? top[0] : "—");
+  set("m-top-sub",   top ? `${top[1].toLocaleString()} queries` : "");
+}
+
+// ── Charts ───────────────────────────────────────────────────────────────────
+function initCharts() {
+  const baseOpts = {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
+    animation: { duration: 400 },
+  };
+
+  // Timeline
+  charts.timeline = new Chart(
+    document.getElementById("chart-timeline").getContext("2d"), {
+      type: "line",
+      data: { labels: [], datasets: [{ data: [], fill: true,
+        borderColor: CHART_COLORS[0], borderWidth: 2,
+        backgroundColor: hexAlpha(CHART_COLORS[0], .12),
+        tension: 0.4, pointRadius: 2, pointHoverRadius: 5,
+      }]},
+      options: {
+        ...baseOpts,
+        scales: {
+          x: { grid: { color: "#1E2240" }, ticks: { color: "#5A6080", font: { size: 10 } }, maxTicksLimit: 12 },
+          y: { grid: { color: "#1E2240" }, ticks: { color: "#5A6080", font: { size: 10 } }, beginAtZero: true },
+        },
+      },
+    }
+  );
+
+  // Top domains
+  charts.top = new Chart(
+    document.getElementById("chart-top").getContext("2d"), {
+      type: "bar",
+      data: { labels: [], datasets: [{ data: [], backgroundColor: CHART_COLORS }]},
+      options: {
+        ...baseOpts,
+        indexAxis: "y",
+        scales: {
+          x: { grid: { color: "#1E2240" }, ticks: { color: "#5A6080", font: { size: 10 } } },
+          y: { grid: { display: false }, ticks: { color: "#8B92B8", font: { size: 10, family: "'JetBrains Mono',monospace" } } },
+        },
+      },
+    }
+  );
+}
+
+function updateCharts() {
+  // Timeline — bucket by hour
+  const hourMap = {};
+  filtered.forEach(row => {
+    const key = row.timestamp.slice(0, 13) + ":00";  // "YYYY-MM-DD HH:00"
+    hourMap[key] = (hourMap[key] ?? 0) + 1;
+  });
+  const hourKeys = Object.keys(hourMap).sort();
+  charts.timeline.data.labels   = hourKeys.map(k => k.slice(5, 16));   // MM-DD HH:00
+  charts.timeline.data.datasets[0].data = hourKeys.map(k => hourMap[k]);
+  charts.timeline.update();
+
+  // Top domains
+  const top10 = freq(filtered.map(r => r.domain)).slice(0, 10);
+  charts.top.data.labels                = top10.map(([d]) => truncate(d, 28));
+  charts.top.data.datasets[0].data      = top10.map(([, c]) => c);
+  charts.top.data.datasets[0].backgroundColor = top10.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
+  charts.top.update();
+}
+
+// ── Table ────────────────────────────────────────────────────────────────────
+function updateTable() {
+  const tbody = document.getElementById("table-body");
+  const count = document.getElementById("table-count");
+  count.textContent = `${filtered.length.toLocaleString()} rows`;
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="3"><div class="empty-state">
+      <div class="icon">🔍</div>
+      <p>No queries match the current filters. Try widening the date range or clearing the domain filter.</p>
+    </div></td></tr>`;
+    return;
+  }
+
+  // Render up to 500 rows for DOM performance
+  const rows = filtered.slice(0, 500);
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td class="id-cell">${r.id}</td>
+      <td class="mono">${r.timestamp}</td>
+      <td class="domain">${escHtml(r.domain)}</td>
+    </tr>`).join("");
+
+  if (filtered.length > 500) {
+    tbody.innerHTML += `<tr><td colspan="3" style="text-align:center;padding:12px;color:var(--text-dim);font-size:11px">
+      Showing 500 of ${filtered.length.toLocaleString()} rows — use the domain filter to narrow results
+    </td></tr>`;
+  }
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+function freq(arr) {
+  const map = {};
+  arr.forEach(v => { map[v] = (map[v] ?? 0) + 1; });
+  return Object.entries(map).sort((a, b) => b[1] - a[1]);
+}
+
+function fmtDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+function hexAlpha(hex, a) {
+  const [r,g,b] = [1,3,5].map(i => parseInt(hex.slice(i,i+2), 16));
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function truncate(str, n) {
+  return str.length > n ? "…" + str.slice(-(n-1)) : str;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function set(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg, type = "") {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ""; }, 2800);
+}
+</script>
+</body>
+</html>
