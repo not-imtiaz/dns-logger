@@ -599,4 +599,4 @@ For issues, questions, or suggestions:
 
 Instagram : https://instagram.com/imtiaahm
 
-Instagram : https://instagram.com/imtudi
+Instagram : https://instagram.com/imtud
