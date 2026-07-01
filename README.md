@@ -597,4 +597,4 @@ For issues, questions, or suggestions:
 
 **Happy monitoring! 🔍**
 
-Instagram : https://instagram
+Instagram : https://instagra
