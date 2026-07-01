@@ -596,4 +596,3 @@ For issues, questions, or suggestions:
 ---
 
 **Happy monitoring! 🔍**
-
