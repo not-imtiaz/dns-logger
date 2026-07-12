@@ -595,4 +595,4 @@ For issues, questions, or suggestions:
 
 ---
 
-**Happy monit
+**Happy moni
